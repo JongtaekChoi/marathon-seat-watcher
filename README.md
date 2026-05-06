@@ -11,9 +11,11 @@ npx playwright install chromium
 ## 2) 환경변수
 `.env` 파일 생성:
 ```env
-RACE_URL=https://race.cjsports.or.kr/03/
+RACE_URL=https://race.cjsports.or.kr/03/intro.php
 APPLICANT_NAME=홍길동
-BIRTH_YYYYMMDD=19900101
+APPLICANT_PASSWORD=비밀번호
+APPLICANT_SEX=M
+DEBUG=true
 ```
 
 ## 3) 수동 실행

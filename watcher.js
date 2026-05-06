@@ -16,9 +16,10 @@ function loadEnv() {
 }
 
 const env = { ...process.env, ...loadEnv() };
-const RACE_URL = env.RACE_URL || 'https://race.cjsports.or.kr/03/';
+const RACE_URL = env.RACE_URL || 'https://race.cjsports.or.kr/03/intro.php';
 const APPLICANT_NAME = env.APPLICANT_NAME || '';
-const BIRTH_YYYYMMDD = env.BIRTH_YYYYMMDD || '';
+const APPLICANT_PASSWORD = env.APPLICANT_PASSWORD || '';
+const APPLICANT_SEX = (env.APPLICANT_SEX || 'M').toUpperCase();
 const DEBUG = (env.DEBUG || 'true').toLowerCase() !== 'false';
 
 function logStep(step, extra = '') {
@@ -27,16 +28,18 @@ function logStep(step, extra = '') {
   console.log(`[${ts}] [STEP] ${step}${extra ? ` | ${extra}` : ''}`);
 }
 
-if (!APPLICANT_NAME || !BIRTH_YYYYMMDD) {
-  logStep('env_check_failed', 'APPLICANT_NAME/BIRTH_YYYYMMDD missing');
-  console.log(JSON.stringify({ ok: false, reason: 'missing_env', need: ['APPLICANT_NAME', 'BIRTH_YYYYMMDD'] }));
+if (!APPLICANT_NAME || !APPLICANT_PASSWORD || !APPLICANT_SEX) {
+  logStep('env_check_failed', 'APPLICANT_NAME/APPLICANT_PASSWORD/APPLICANT_SEX missing');
+  console.log(JSON.stringify({ ok: false, reason: 'missing_env', need: ['APPLICANT_NAME', 'APPLICANT_PASSWORD', 'APPLICANT_SEX'] }));
   process.exit(2);
 }
 
 const SELECTORS = {
   agree: 'input[type="checkbox"]',
-  name: 'input[name*="name" i], input[id*="name" i]',
-  birth: 'input[name*="birth" i], input[id*="birth" i]',
+  name: '#agree_name, input[name="reg_name"]',
+  password: '#agree_pw, input[name="pw"]',
+  male: '#chk_men, input[name="sex"][value="M"]',
+  female: '#chk_women, input[name="sex"][value="F"]',
   submit: 'button:has-text("신청"), input[type="submit"]',
   general: 'text=일반',
   full: '#Full'
@@ -64,8 +67,13 @@ const SELECTORS = {
     }
 
     await page.locator(SELECTORS.name).first().fill(APPLICANT_NAME).catch(() => {});
-    await page.locator(SELECTORS.birth).first().fill(BIRTH_YYYYMMDD).catch(() => {});
-    logStep('form_filled', `name=${APPLICANT_NAME}, birth=${BIRTH_YYYYMMDD}`);
+    await page.locator(SELECTORS.password).first().fill(APPLICANT_PASSWORD).catch(() => {});
+    if (APPLICANT_SEX === 'F') {
+      await page.locator(SELECTORS.female).first().check({ force: true }).catch(() => {});
+    } else {
+      await page.locator(SELECTORS.male).first().check({ force: true }).catch(() => {});
+    }
+    logStep('form_filled', `name=${APPLICANT_NAME}, sex=${APPLICANT_SEX}`);
 
     await page.locator(SELECTORS.submit).first().click({ timeout: 5000 }).catch(() => {});
     logStep('submit_clicked');
