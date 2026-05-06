@@ -1,0 +1,12 @@
+{
+  "name": "marathon-seat-watcher",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node watcher.js"
+  },
+  "dependencies": {
+    "playwright": "^1.54.2"
+  }
+}
