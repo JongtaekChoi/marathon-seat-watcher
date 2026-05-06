@@ -77,22 +77,72 @@ const SELECTORS = {
 
     await page.locator(SELECTORS.submit).first().click({ timeout: 5000 }).catch(() => {});
     logStep('submit_clicked');
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1200);
 
-    await page.locator(SELECTORS.general).first().click({ timeout: 5000 }).catch(() => {});
-    logStep('general_clicked');
-    await page.waitForTimeout(500);
+    const pages = page.context().pages();
+    logStep('context_pages_after_submit', pages.map(p => p.url()).join(' | '));
 
-    const full = page.locator(SELECTORS.full);
-    const fullCount = await full.count();
-    logStep('full_radio_found', String(fullCount));
-    if (fullCount) {
-      await full.first().click({ force: true }).catch(() => {});
-      logStep('full_radio_clicked');
+    const candidatePages = Array.from(new Set([page, ...pages]));
+
+    let workPage = page;
+    let foundGeneral = false;
+
+    for (const p of candidatePages) {
+      const frameList = p.frames();
+      logStep('scan_page', `url=${p.url()} frames=${frameList.length}`);
+      for (const f of frameList) {
+        const gCount = await f.locator(SELECTORS.general).count().catch(() => 0);
+        const rCount = await f.locator('input[type="radio"]').count().catch(() => 0);
+        logStep('scan_frame', `url=${f.url()} general=${gCount} radios=${rCount}`);
+        if (gCount > 0 && !foundGeneral) {
+          await f.locator(SELECTORS.general).first().click({ timeout: 5000 }).catch(() => {});
+          logStep('general_clicked', `frame=${f.url()}`);
+          foundGeneral = true;
+          workPage = p;
+          await p.waitForTimeout(800);
+          break;
+        }
+      }
+      if (foundGeneral) break;
     }
 
+    if (!foundGeneral) {
+      await page.locator(SELECTORS.general).first().click({ timeout: 5000 }).catch(() => {});
+      logStep('general_clicked', 'fallback_main_page');
+      await page.waitForTimeout(800);
+    }
+
+    const dumpInputs = await workPage.evaluate(() => {
+      return Array.from(document.querySelectorAll('input')).map(i => ({
+        id: i.id,
+        name: i.name,
+        type: i.type,
+        value: i.value,
+        checked: i.checked,
+        onclick: i.getAttribute('onclick')
+      })).slice(0, 300);
+    }).catch(() => []);
+    logStep('input_dump_count', String(dumpInputs.length));
+
+    let fullCount = 0;
+    for (const p of candidatePages) {
+      const frameList = p.frames();
+      for (const f of frameList) {
+        const c = await f.locator(SELECTORS.full).count().catch(() => 0);
+        if (c > 0) {
+          fullCount = c;
+          await f.locator(SELECTORS.full).first().click({ force: true }).catch(() => {});
+          logStep('full_radio_clicked', `frame=${f.url()}`);
+          workPage = p;
+          break;
+        }
+      }
+      if (fullCount > 0) break;
+    }
+    logStep('full_radio_found', String(fullCount));
+
     logStep('checkFree_probe_start');
-    const result = await page.evaluate(() => {
+    const result = await workPage.evaluate(() => {
       try {
         if (typeof window.checkFree === 'function') {
           const t = window.checkFree(true);
