@@ -41,7 +41,7 @@ const SELECTORS = {
   password: '#agree_pw, input[name="pw"]',
   male: '#chk_men, input[name="sex"][value="M"]',
   female: '#chk_women, input[name="sex"][value="F"]',
-  submit: 'button:has-text("신청"), input[type="submit"]',
+  submit: '#btn_p_form, a[onclick*="formcheck"], button:has-text("신청"), input[type="submit"]',
   general: 'text=일반',
   full: '#Full'
 };
@@ -51,6 +51,13 @@ const SELECTORS = {
   const page = await browser.newPage();
   let available = false;
   let detail = 'unknown';
+  const dialogs = [];
+
+  page.on('dialog', async d => {
+    dialogs.push({ type: d.type(), message: d.message() });
+    logStep('dialog', `${d.type()}: ${d.message()}`);
+    await d.accept().catch(() => {});
+  });
 
   try {
     logStep('start', `url=${RACE_URL}`);
@@ -60,12 +67,36 @@ const SELECTORS = {
     const agrees = page.locator(SELECTORS.agree);
     const agreeCount = await agrees.count();
     logStep('agree_checkboxes_found', String(agreeCount));
-    for (let i = 0; i < agreeCount; i++) {
-      const box = agrees.nth(i);
-      if (!(await box.isChecked().catch(() => false))) {
-        await box.check({ force: true }).catch(() => {});
+
+    await page.evaluate(() => {
+      const all = document.querySelector('#option_all');
+      if (all) {
+        all.checked = true;
       }
-    }
+
+      const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+      checkboxes.forEach(cb => cb.checked = true);
+
+      const foreignerN = document.querySelector('#chk_kr');
+      if (foreignerN) {
+        foreignerN.checked = true;
+      }
+
+      if (typeof window.check_all === 'function' && all) {
+        window.check_all(all);
+        all.checked = true;
+      }
+    }).catch(() => {});
+
+    const agreeState = await page.evaluate(() => {
+      const f = document.form1;
+      return {
+        option_all: f?.option_all?.checked,
+        foreignerN: document.querySelector('#chk_kr')?.checked,
+        foreignerY: document.querySelector('#chk_for')?.checked
+      };
+    }).catch(() => ({}));
+    logStep('agree_forced_checked', JSON.stringify(agreeState));
 
     await page.locator(SELECTORS.name).first().fill(APPLICANT_NAME).catch(() => {});
     await page.locator(SELECTORS.password).first().fill(APPLICANT_PASSWORD).catch(() => {});
@@ -86,14 +117,57 @@ const SELECTORS = {
     await page.selectOption('select[name="birth_day"]', { value: dayVal }).catch(() => {});
 
     if (APPLICANT_SEX === 'F') {
-      await page.locator(SELECTORS.female).first().check({ force: true }).catch(() => {});
+      await page.locator(SELECTORS.female).first().click({ force: true }).catch(() => {});
     } else {
-      await page.locator(SELECTORS.male).first().check({ force: true }).catch(() => {});
+      await page.locator(SELECTORS.male).first().click({ force: true }).catch(() => {});
     }
-    logStep('form_filled', `name=${APPLICANT_NAME}, sex=${APPLICANT_SEX}, birth=${by}-${monthVal}-${dayVal}`);
+
+    await page.evaluate((sex) => {
+      const target = sex === 'F'
+        ? document.querySelector('#chk_women')
+        : document.querySelector('#chk_men');
+      if (target) {
+        target.checked = true;
+        target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, APPLICANT_SEX).catch(() => {});
+
+    const sexState = await page.evaluate(() => {
+      const f = document.form1;
+      let selected = '';
+      if (f?.sex) {
+        if (f.sex.length === undefined) {
+          selected = f.sex.checked ? f.sex.value : '';
+        } else {
+          for (const s of f.sex) if (s.checked) selected = s.value;
+        }
+      }
+      return {
+        selected,
+        men: document.querySelector('#chk_men')?.checked,
+        women: document.querySelector('#chk_women')?.checked
+      };
+    }).catch(() => ({}));
+
+    logStep('form_filled', `name=${APPLICANT_NAME}, sex=${APPLICANT_SEX}, birth=${by}-${monthVal}-${dayVal}, sexState=${JSON.stringify(sexState)}`);
 
     await page.locator(SELECTORS.submit).first().click({ timeout: 5000 }).catch(() => {});
     logStep('submit_clicked');
+
+    const jsSubmit = await page.evaluate(() => {
+      try {
+        if (typeof window.formcheck === 'function') {
+          window.formcheck('p_form', '');
+          return { called: true };
+        }
+        return { called: false, reason: 'formcheck_not_found' };
+      } catch (e) {
+        return { called: false, error: String(e) };
+      }
+    });
+    logStep('js_formcheck_call', JSON.stringify(jsSubmit));
+
     await page.waitForTimeout(1200);
 
     const pages = page.context().pages();
@@ -180,6 +254,9 @@ const SELECTORS = {
       detail = JSON.stringify(result);
     }
 
+    if (dialogs.length) {
+      detail = `${detail} | dialogs=${JSON.stringify(dialogs)}`;
+    }
     logStep('result_decided', `available=${available}, detail=${detail}`);
     console.log(JSON.stringify({ ok: true, available, detail }));
   } catch (e) {
