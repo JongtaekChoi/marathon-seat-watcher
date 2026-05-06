@@ -19,8 +19,16 @@ const env = { ...process.env, ...loadEnv() };
 const RACE_URL = env.RACE_URL || 'https://race.cjsports.or.kr/03/';
 const APPLICANT_NAME = env.APPLICANT_NAME || '';
 const BIRTH_YYYYMMDD = env.BIRTH_YYYYMMDD || '';
+const DEBUG = (env.DEBUG || 'true').toLowerCase() !== 'false';
+
+function logStep(step, extra = '') {
+  if (!DEBUG) return;
+  const ts = new Date().toISOString();
+  console.log(`[${ts}] [STEP] ${step}${extra ? ` | ${extra}` : ''}`);
+}
 
 if (!APPLICANT_NAME || !BIRTH_YYYYMMDD) {
+  logStep('env_check_failed', 'APPLICANT_NAME/BIRTH_YYYYMMDD missing');
   console.log(JSON.stringify({ ok: false, reason: 'missing_env', need: ['APPLICANT_NAME', 'BIRTH_YYYYMMDD'] }));
   process.exit(2);
 }
@@ -41,10 +49,13 @@ const SELECTORS = {
   let detail = 'unknown';
 
   try {
+    logStep('start', `url=${RACE_URL}`);
     await page.goto(RACE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    logStep('page_loaded', `title=${await page.title()}`);
 
     const agrees = page.locator(SELECTORS.agree);
     const agreeCount = await agrees.count();
+    logStep('agree_checkboxes_found', String(agreeCount));
     for (let i = 0; i < agreeCount; i++) {
       const box = agrees.nth(i);
       if (!(await box.isChecked().catch(() => false))) {
@@ -54,18 +65,25 @@ const SELECTORS = {
 
     await page.locator(SELECTORS.name).first().fill(APPLICANT_NAME).catch(() => {});
     await page.locator(SELECTORS.birth).first().fill(BIRTH_YYYYMMDD).catch(() => {});
+    logStep('form_filled', `name=${APPLICANT_NAME}, birth=${BIRTH_YYYYMMDD}`);
 
     await page.locator(SELECTORS.submit).first().click({ timeout: 5000 }).catch(() => {});
+    logStep('submit_clicked');
     await page.waitForTimeout(1000);
 
     await page.locator(SELECTORS.general).first().click({ timeout: 5000 }).catch(() => {});
+    logStep('general_clicked');
     await page.waitForTimeout(500);
 
     const full = page.locator(SELECTORS.full);
-    if (await full.count()) {
+    const fullCount = await full.count();
+    logStep('full_radio_found', String(fullCount));
+    if (fullCount) {
       await full.first().click({ force: true }).catch(() => {});
+      logStep('full_radio_clicked');
     }
 
+    logStep('checkFree_probe_start');
     const result = await page.evaluate(() => {
       try {
         if (typeof window.checkFree === 'function') {
@@ -87,6 +105,7 @@ const SELECTORS = {
       detail = JSON.stringify(result);
     }
 
+    logStep('result_decided', `available=${available}, detail=${detail}`);
     console.log(JSON.stringify({ ok: true, available, detail }));
   } catch (e) {
     console.log(JSON.stringify({ ok: false, error: String(e) }));
