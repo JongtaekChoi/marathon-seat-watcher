@@ -20,6 +20,7 @@ const RACE_URL = env.RACE_URL || 'https://race.cjsports.or.kr/03/intro.php';
 const APPLICANT_NAME = env.APPLICANT_NAME || '';
 const APPLICANT_PASSWORD = env.APPLICANT_PASSWORD || '';
 const APPLICANT_SEX = (env.APPLICANT_SEX || 'M').toUpperCase();
+const BIRTH_YYYYMMDD = env.BIRTH_YYYYMMDD || '';
 const DEBUG = (env.DEBUG || 'true').toLowerCase() !== 'false';
 
 function logStep(step, extra = '') {
@@ -28,9 +29,9 @@ function logStep(step, extra = '') {
   console.log(`[${ts}] [STEP] ${step}${extra ? ` | ${extra}` : ''}`);
 }
 
-if (!APPLICANT_NAME || !APPLICANT_PASSWORD || !APPLICANT_SEX) {
-  logStep('env_check_failed', 'APPLICANT_NAME/APPLICANT_PASSWORD/APPLICANT_SEX missing');
-  console.log(JSON.stringify({ ok: false, reason: 'missing_env', need: ['APPLICANT_NAME', 'APPLICANT_PASSWORD', 'APPLICANT_SEX'] }));
+if (!APPLICANT_NAME || !APPLICANT_PASSWORD || !APPLICANT_SEX || !BIRTH_YYYYMMDD || BIRTH_YYYYMMDD.length !== 8) {
+  logStep('env_check_failed', 'APPLICANT_NAME/APPLICANT_PASSWORD/APPLICANT_SEX/BIRTH_YYYYMMDD missing');
+  console.log(JSON.stringify({ ok: false, reason: 'missing_env', need: ['APPLICANT_NAME', 'APPLICANT_PASSWORD', 'APPLICANT_SEX', 'BIRTH_YYYYMMDD(YYYYMMDD)'] }));
   process.exit(2);
 }
 
@@ -68,12 +69,28 @@ const SELECTORS = {
 
     await page.locator(SELECTORS.name).first().fill(APPLICANT_NAME).catch(() => {});
     await page.locator(SELECTORS.password).first().fill(APPLICANT_PASSWORD).catch(() => {});
+
+    const by = BIRTH_YYYYMMDD.slice(0, 4);
+    const bm2 = BIRTH_YYYYMMDD.slice(4, 6);
+    const bd2 = BIRTH_YYYYMMDD.slice(6, 8);
+
+    const yearOptions = await page.locator('select[name="birth_year"] option').allTextContents().catch(() => []);
+    const monthOptions = await page.locator('select[name="birth_month"] option').evaluateAll(opts => opts.map(o => (o.value || '').trim())).catch(() => []);
+    const dayOptions = await page.locator('select[name="birth_day"] option').evaluateAll(opts => opts.map(o => (o.value || '').trim())).catch(() => []);
+    logStep('birth_options_probe', `year_opts=${yearOptions.length}, month_vals=${monthOptions.slice(0,5).join(',')}, day_vals=${dayOptions.slice(0,5).join(',')}`);
+
+    await page.selectOption('select[name="birth_year"]', { value: by }).catch(() => {});
+    const monthVal = monthOptions.includes(bm2) ? bm2 : String(parseInt(bm2, 10));
+    const dayVal = dayOptions.includes(bd2) ? bd2 : String(parseInt(bd2, 10));
+    await page.selectOption('select[name="birth_month"]', { value: monthVal }).catch(() => {});
+    await page.selectOption('select[name="birth_day"]', { value: dayVal }).catch(() => {});
+
     if (APPLICANT_SEX === 'F') {
       await page.locator(SELECTORS.female).first().check({ force: true }).catch(() => {});
     } else {
       await page.locator(SELECTORS.male).first().check({ force: true }).catch(() => {});
     }
-    logStep('form_filled', `name=${APPLICANT_NAME}, sex=${APPLICANT_SEX}`);
+    logStep('form_filled', `name=${APPLICANT_NAME}, sex=${APPLICANT_SEX}, birth=${by}-${monthVal}-${dayVal}`);
 
     await page.locator(SELECTORS.submit).first().click({ timeout: 5000 }).catch(() => {});
     logStep('submit_clicked');
