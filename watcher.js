@@ -348,7 +348,10 @@ const SELECTORS = {
     }).catch(() => null);
     logStep("full_title_value", String(fullTitle));
 
-    if (fullTitle === "Full 접수가 마감되었습니다.") {
+    if (fullTitle === null) {
+      available = false;
+      detail = "full_element_not_found";
+    } else if (fullTitle === "Full 접수가 마감되었습니다.") {
       available = false;
       detail = "full_closed";
     } else {
